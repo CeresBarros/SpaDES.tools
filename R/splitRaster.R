@@ -98,8 +98,8 @@ setMethod(
       }
     }
 
-    croppy <- function(i, e, r, path) {
-      filename <- file.path(path, paste0(names(r), "_tile", i, ".grd"))
+    croppy <- function(i, e, r, path, fileExt="grd") {
+      filename <- file.path(path, paste0(names(r), "_tile", i, ".", fileExt))
       ri <- crop(r, e[[i]])
       crs(ri) <- crs(r)
       writeRaster(ri, filename, overwrite = TRUE)
@@ -107,10 +107,106 @@ setMethod(
     }
 
     tiles <- if (!is.null(cl)) {
-      clusterApplyLB(cl = cl, x = seq_along(extents), fun = croppy, e = extents, r = r, path = path)
+      clusterApplyLB(cl = cl, x = seq_along(extents), fun = croppy, e = extents, r = r, path = path,
+                     fileExt = fileExt)
     } else {
-      lapply(X = seq_along(extents), FUN = croppy, e = extents, r = r, path = path)
+      lapply(X = seq_along(extents), FUN = croppy, e = extents, r = r, path = path,
+             fileExt = fileExt)
     }
 
     return(tiles)
 })
+
+
+
+
+#' @export
+#' @param ... passed to \code{crop}, anything other than x or y e.g., filename, datatype
+#' @rdname splitRaster
+#' @importClassesFrom quickPlot spatialObjects
+split.spatialObjects <- function(x, f, drop, nx, ny, buffer, path, cl, ...) {
+  if (!missing(f)) stop("f is not used. Please use nx, ny, and buffer.")
+  if (missing(buffer)) buffer <- 0
+  if (missing(path)) path <- tempdir()
+
+  if (!is.numeric(nx) | !is.numeric(ny) | !is.numeric(buffer)) {
+      stop("nx, ny, and buffer must be numeric")
+  }
+  if (!is.integer(nx)) nx <- as.integer(nx)
+  if (!is.integer(ny)) ny <- as.integer(ny)
+  if (is.integer(buffer)) buffer <- as.numeric(buffer)
+
+  resol <- if (is(x, "Raster")) xres(x) else if (is.na(crs(x))) 1 else 1
+
+  checkPath(path, create = TRUE)
+
+  if (missing(cl)) {
+    cl <- tryCatch(getCluster(), error = function(x) NULL)
+    on.exit(if (!is.null(cl)) returnCluster(), add = TRUE)
+  }
+
+  if (length(buffer) > 2) {
+    warning("buffer contains more than 2 elements - only the first two will be used.")
+    buffer <- buffer[1:2]
+  } else if (length(buffer) == 1) {
+    buffer <- c(buffer, buffer)
+  }
+  if (buffer[1] < 1) {
+    buffer[1] <- ceiling((buffer[1] * (xmax(x) - xmin(x)) / nx) / resol) # nolint
+  }
+  if (buffer[2] < 1) {
+    buffer[2] <- ceiling((buffer[2] * (ymax(x) - ymin(x)) / ny) / resol) # nolint
+  }
+
+  ext <- extent(x)
+  extents <- vector("list", length = nx * ny)
+  n <- 1L
+  for (i in seq_len(nx) - 1L) {
+    for (j in seq_len(ny) - 1L) {
+      x0 <- ext@xmin + i * ((ext@xmax - ext@xmin) / nx) - buffer[1] * resol # nolint
+      x1 <- ext@xmin + (i + 1L) * ((ext@xmax - ext@xmin) / nx) + buffer[1] * resol # nolint
+      y0 <- ext@ymin + j * ((ext@ymax - ext@ymin) / ny) - buffer[2] * resol # nolint
+      y1 <- ext@ymin + (j + 1L) * ((ext@ymax - ext@ymin) / ny) + buffer[2] * resol # nolint
+      extents[[n]] <- extent(x0, x1, y0, y1)
+      n <- n + 1L
+    }
+  }
+
+  # filename
+  dots <- list(...)
+  filenameParts <- strsplit(dots$filename, split = "\\.")[[1]]
+  fileExt <- filenameParts[length(filenameParts)]
+  filenameBase <- filenameParts[-length(filenameParts)]
+  if(any(names(dots)=="filename"))  {
+    dots$filename <- NULL
+    filenames <- paste0(filenameBase, "_tile", seq_along(extents), ".", fileExt)
+  } else {
+    filenames <- NULL
+  }
+
+
+  # if(!exists("fileExt")) fileExt <- "tif"
+  # croppy <- function(i, e, r, path, fileExt="grd") {
+  #   filename <- file.path(path, paste0(names(r), "_tile", i, ".", fileExt))
+  #   ri <- crop(r, e[[i]])
+  #   crs(ri) <- crs(r)
+  #   writeRaster(ri, filename, overwrite = TRUE)
+  #   return(raster(filename))
+  # }
+
+  lapplyFn <- if (!is.null(cl)) "clusterApplyLB" else "lapply"
+  args <- list()
+  args <- if (!is.null(cl)) append(args, list(cl = cl))
+  args <- append(args, list(seq_along(extents), function(exts) {
+  #  browser()
+    args2 <- list(x=x, y=extents[[exts]])
+    if(length(filenames)) args2 <- append(args2, list(filename = filenames[[exts]]))
+    if(length(dots)) args2 <- append(args2, dots)
+    do.call(crop, args2)
+  }))
+
+  tiles <- do.call(lapplyFn, args)
+
+  return(tiles)
+}
+

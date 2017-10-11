@@ -23,6 +23,8 @@ test_that("splitRaster and mergeRaster work on small in-memory rasters", {
 
   # no buffer
   y0 <- splitRaster(r, nx, ny)
+  y0 <- split(r, nx=nx, ny=ny)
+
   expect_equal(class(y0), "list")
   expect_true(unique(unlist(lapply(y0, fromDisk))))
 
@@ -265,4 +267,39 @@ test_that("splitRaster and mergeRaster work on large on-disk rasters", {
   expect_equal(res(m1), res(r))
   #expect_equal(max(values(m1)), max(values(r)))
   #expect_equal(min(values(m1)), min(values(r)))
+})
+
+
+test_that("split works on rasters and polygons", {
+  skip("still working on these tests")
+  library(magrittr)
+  library(raster); on.exit(detach("package:raster"), add = TRUE)
+
+  owd <- getwd()
+  tmpdir <- file.path(tempdir(), "splitRaster-test") %>% checkPath(create = TRUE)
+  setwd(tmpdir)
+
+  on.exit({
+    setwd(owd)
+    unlink(tmpdir, recursive = TRUE)
+  }, add = TRUE)
+
+  Sr1 = Polygon(cbind(c(2,4,4,1,2),c(2,3,5,4,2)))
+  Sr2 = Polygon(cbind(c(5,4,2,5),c(2,3,2,2)))
+  Sr3 = Polygon(cbind(c(4,4,5,10,4),c(5,3,2,5,5)))
+  Sr4 = Polygon(cbind(c(5,6,6,5,5),c(4,4,3,3,4)), hole = TRUE)
+
+  Srs1 = Polygons(list(Sr1), "s1")
+  Srs2 = Polygons(list(Sr2), "s2")
+  Srs3 = Polygons(list(Sr3, Sr4), "s3/4")
+  SpP = SpatialPolygons(list(Srs1,Srs2,Srs3), 1:3)
+  plot(SpP)
+  out <- split(SpP, nx = 2, ny = 1, buffer = 1, path = tempdir())
+  expect_length(out, 2)
+  expect_true(isTRUE(all(sapply(out, function(xx) is(xx, "SpatialPolygons")))))
+  expect_true(xmax(out[[1]]) > xmin(out[[2]]))
+  out <- split(SpP, nx = 2, ny = 1, buffer = 0, path = tempdir())
+  expect_true(xmax(out[[1]]) == xmin(out[[2]]))
+
+
 })

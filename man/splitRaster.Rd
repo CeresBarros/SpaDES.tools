@@ -6,6 +6,7 @@
 \alias{mergeRaster,list-method}
 \alias{splitRaster}
 \alias{splitRaster,RasterLayer-method}
+\alias{split.spatialObjects}
 \title{Split and re-merge RasterLayer(s)}
 \usage{
 mergeRaster(x)
@@ -17,6 +18,8 @@ splitRaster(r, nx = 1, ny = 1, buffer = c(0, 0),
 
 \S4method{splitRaster}{RasterLayer}(r, nx = 1, ny = 1, buffer = c(0, 0),
   path = file.path(getwd(), names(r)), cl)
+
+\method{split}{spatialObjects}(x, f, drop, nx, ny, buffer, path, cl)
 }
 \arguments{
 \item{x}{A list of split raster tiles (i.e., from \code{splitRaster}).}
